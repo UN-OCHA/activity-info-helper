@@ -1,0 +1,42 @@
+{
+  "name": "activityinfo-helper",
+  "description": "manifest.json description",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox",
+    "compile": "tsc --noEmit",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "@blueprintjs/core": "^6.11.1",
+    "@blueprintjs/icons": "^6.8.0",
+    "@blueprintjs/select": "^6.1.6",
+    "@codemirror/autocomplete": "^6.20.1",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/lint": "^6.9.5",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.40.0",
+    "@paralleldrive/cuid2": "^3.3.0",
+    "@uiw/react-codemirror": "^4.25.9",
+    "normalize.css": "^8.0.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@wxt-dev/auto-icons": "^1.1.1",
+    "@wxt-dev/module-react": "^1.1.5",
+    "typescript": "^5.9.3",
+    "wxt": "^0.20.20"
+  },
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
+}

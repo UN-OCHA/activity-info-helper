@@ -1,6 +1,7 @@
-import {useState} from 'react';
+import {useState, useMemo} from 'react';
 import {Database, LogEntry, ReplayResult, ReplayRun, MappingInfo} from "@/types.ts";
-import {getResourceMap} from "@/utils/mappingEngine";
+import {getResourceMap, getMappingMetadata} from "@/utils/mappingEngine";
+import {applyReplacementsFromMap, translateBody} from "@/utils/translationEngine";
 
 export const useReplay = (
     logs: LogEntry[], 
@@ -15,7 +16,11 @@ export const useReplay = (
     const [currentRun, setCurrentRun] = useState<ReplayRun | null>(null);
     const [showResultsDialog, setShowResultsDialog] = useState(false);
     const [isConfiguring, setIsConfiguring] = useState(false);
+    const [isReviewing, setIsReviewing] = useState(false);
     const [manualSourceId, setManualSourceId] = useState("");
+    const [globalResourceMap, setGlobalResourceMap] = useState<Map<string, MappingInfo>>(new Map());
+
+    const mappingMetadata = useMemo(() => getMappingMetadata(databases), [databases]);
 
     const autoDetectSourceId = () => {
         const firstSelected = logs.find(l => selectedIds.has(l.id));
@@ -30,133 +35,40 @@ export const useReplay = (
         setManualSourceId(autoDetectSourceId());
         if (onReplayClick) onReplayClick(autoDetectSourceId());
         setIsConfiguring(true);
+        setIsReviewing(false);
         setShowResultsDialog(true);
     };
 
-    const applyReplacementsFromMap = (text: string, resourceMap: Map<string, MappingInfo>, targetDbId: string): string => {
-        if (!text || resourceMap.size === 0) return text;
-        const sortedIds = Array.from(resourceMap.keys()).sort((a, b) => b.length - a.length);
-        let result = text;
-        for (const sId of sortedIds) {
-            const info = resourceMap.get(sId);
-            const translation = info?.translations.find(t => t.targetDbId === targetDbId);
-            if (translation && translation.targetId !== sId) {
-                result = result.split(sId).join(translation.targetId);
-            }
-        }
-        return result;
+    const prepareMapping = () => {
+        const selectedLogs = logs.filter(l => selectedIds.has(l.id));
+        const allText = selectedLogs.map(l => new URL(l.url).pathname + " " + JSON.stringify(l.body)).join(" ");
+        const map = getResourceMap(allText, databases, selectedDbs, manualSourceId, mappingMetadata);
+        setGlobalResourceMap(map);
+        setIsConfiguring(false);
+        setIsReviewing(true);
+        return map;
     };
 
-    const translateFormulaChain = (
-        value: string, 
-        databases: Database[], 
-        resourceMap: Map<string, MappingInfo>,
-        targetDbId: string,
-        scopingFormId?: string
-    ): string => {
-        if (!value) return value;
-        
-        const idChainRegex = /\b(?=[a-z0-9.]*[a-z])(?=[a-z0-9.]*[0-9])[a-z0-9.]+(?:\.[a-z0-9.]+)*\b/g;
-        const chains = Array.from(new Set(value.match(idChainRegex) || []));
-        
-        let result = value;
-        
-        const allResources = databases.flatMap(db => db.resources || []);
-        const targetDb = databases.find(db => db.databaseId === targetDbId);
+    const goToConfig = () => {
+        setIsConfiguring(true);
+        setIsReviewing(false);
+    };
 
-        chains.forEach(chain => {
-            const segments = chain.split('.');
-            let currentSourceFormId: string | undefined = scopingFormId;
-            
-            const translatedSegments: string[] = [];
-            let possible = true;
-
-            for (const segment of segments) {
-                if (!currentSourceFormId) {
-                    possible = false;
-                    break;
-                }
-
-                const sourceForm = allResources.find(r => r.id === currentSourceFormId);
-                const sourceField = sourceForm?.schema?.elements.find(f => f.id === segment);
-                
-                if (!sourceField) {
-                    const info = resourceMap.get(segment);
-                    if (info?.type === 'FIELD') {
-                        const translation = info.translations.find(t => t.targetDbId === targetDbId);
-                        if (translation?.targetCode) {
-                            translatedSegments.push(translation.targetCode);
-                            currentSourceFormId = undefined; 
-                            continue;
-                        }
-                    }
-                    possible = false;
-                    break;
-                }
-
-                let targetCode = sourceField.code || segment;
-                const targetForm = targetDb?.resources?.find(r => r.label === sourceForm?.label && r.type === 'FORM');
-                const targetField = targetForm?.schema?.elements.find(f => f.label === sourceField.label);
-                
-                if (targetField?.code) {
-                    targetCode = targetField.code;
-                }
-                
-                translatedSegments.push(targetCode);
-                currentSourceFormId = sourceField.typeParameters?.range?.[0]?.formId;
+    const updateMapping = (sourceId: string, targetDbId: string, newTargetId: string) => {
+        setGlobalResourceMap(prev => {
+            const next = new Map(prev);
+            const info = next.get(sourceId);
+            if (info) {
+                const updatedTranslations = info.translations.map(t => 
+                    t.targetDbId === targetDbId ? { ...t, targetId: newTargetId, error: false } : t
+                );
+                next.set(sourceId, { ...info, translations: updatedTranslations });
             }
-
-            if (possible && translatedSegments.length === segments.length) {
-                result = result.split(chain).join(translatedSegments.join('.'));
-            } else if (segments.length === 1) {
-                const info = resourceMap.get(chain);
-                if (info) {
-                    const translation = info.translations.find(t => t.targetDbId === targetDbId);
-                    if (translation) result = result.split(chain).join(translation.targetId);
-                }
-            }
+            return next;
         });
-
-        return result;
     };
 
-    const translateBody = (
-        obj: any, 
-        targetDbId: string, 
-        databases: Database[], 
-        resourceMap: Map<string, MappingInfo>,
-        scopingFormId?: string
-    ): any => {
-        if (!obj || typeof obj !== 'object') return obj;
-        if (Array.isArray(obj)) return obj.map(item => translateBody(item, targetDbId, databases, resourceMap, scopingFormId));
-
-        const newObj: any = {};
-        const formulaFields = ["prefixFormula", "formula", "relevanceCondition", "defaultValueFormula", "validationCondition"];
-
-        if (!scopingFormId) {
-            scopingFormId = Array.from(resourceMap.values()).find(info => info.type === 'FORM')?.sourceId;
-        }
-
-        for (const key in obj) {
-            let value = obj[key];
-            
-            if (formulaFields.includes(key) && typeof value === 'string') {
-                value = translateFormulaChain(value, databases, resourceMap, targetDbId, scopingFormId);
-            } else if (typeof value === 'string') {
-                const info = resourceMap.get(value);
-                if (info) {
-                    const translation = info.translations.find(t => t.targetDbId === targetDbId);
-                    if (translation) value = translation.targetId;
-                }
-            } else if (typeof value === 'object') {
-                value = translateBody(value, targetDbId, databases, resourceMap, scopingFormId);
-            }
-            newObj[key] = value;
-        }
-        return newObj;
-    };
-
-    const executeReplay = async () => {
+    const executeReplay = async (overrideMap?: Map<string, MappingInfo>) => {
         const storage = await browser.storage.local.get(["apiToken", "activityUserId"]);
         const userId = (storage.activityUserId as string) || "";
         const apiToken = (storage.apiToken as string) || "";
@@ -164,6 +76,7 @@ export const useReplay = (
 
         setIsReplaying(true);
         setIsConfiguring(false);
+        setIsReviewing(false);
 
         const sourceDb = databases.find(db => db.databaseId === manualSourceId);
         const newRun: ReplayRun = {
@@ -183,8 +96,8 @@ export const useReplay = (
                 const targetDbMetadata = databases.find(db => db.databaseId === targetDb.databaseId) || targetDb;
                 const tId = String(targetDbMetadata.databaseId);
                 
-                const combinedText = new URL(log.url).pathname + " " + JSON.stringify(log.body);
-                const resourceMap = getResourceMap(combinedText, databases, [targetDbMetadata]);
+                // Use the global map that user might have reviewed
+                const resourceMap = overrideMap || globalResourceMap;
                 
                 const scopingFormId = Array.from(resourceMap.values()).find(info => info.type === 'FORM')?.sourceId;
                 const replayedBody = translateBody(log.body, tId, databases, resourceMap, scopingFormId);
@@ -255,5 +168,21 @@ export const useReplay = (
         setIsReplaying(false);
     };
 
-    return { isReplaying, currentRun, showResultsDialog, setShowResultsDialog, isConfiguring, manualSourceId, setManualSourceId, handleReplayClick, executeReplay };
+    return { 
+        isReplaying, 
+        currentRun, 
+        showResultsDialog, 
+        setShowResultsDialog, 
+        isConfiguring, 
+        isReviewing,
+        setIsReviewing,
+        manualSourceId, 
+        setManualSourceId, 
+        handleReplayClick, 
+        prepareMapping,
+        goToConfig,
+        updateMapping,
+        globalResourceMap,
+        executeReplay 
+    };
 };

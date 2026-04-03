@@ -10,8 +10,9 @@ export default defineConfig({
     description: "Perform ActivityInfo bulk database changes with ease",
     offline_enabled: false,
     permissions: ['webRequest', 'storage', 'unlimitedStorage', 'declarativeNetRequest'],
-    host_permissions: [
-      process.env.WXT_ACTIVITY_INFO_BASE_MATCHER ?? "https://3w.humanitarianaction.info/*",
+    optional_host_permissions: [
+      "https://*/*",
+      "http://*/*"
     ]
   },
 });

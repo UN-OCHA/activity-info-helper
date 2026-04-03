@@ -7,7 +7,7 @@ import {syntaxTree} from "@codemirror/language";
 import {HighlightedText} from "./HighlightedText";
 import {useDbIdHighlighter} from "@/hooks/useDbIdHighlighter";
 import {useResourceAutocomplete} from "@/hooks/useResourceAutocomplete";
-import {useMemo, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {getResourceMap} from "@/utils/mappingEngine";
 
 interface LogItemProps {

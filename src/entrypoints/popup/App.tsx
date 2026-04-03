@@ -1,5 +1,17 @@
-import {useEffect, useRef, useState} from 'react';
-import {Alignment, Button, Checkbox, Navbar, NonIdealState, Tab, Tabs} from "@blueprintjs/core";
+import {useEffect, useState} from 'react';
+import {
+    Alignment,
+    Button,
+    Callout,
+    Checkbox,
+    FormGroup,
+    InputGroup,
+    Intent,
+    Navbar,
+    NonIdealState,
+    Tab,
+    Tabs
+} from "@blueprintjs/core";
 import {Database, LogEntry, ReplayRun} from "@/types.ts";
 import {LogItem} from "@/components/LogItem";
 import {HistoryItem} from "@/components/HistoryItem";
@@ -7,110 +19,29 @@ import {DatabaseMultiSelect} from "@/components/DatabaseMultiSelect";
 import {ReplayDialog} from "@/components/ReplayDialog";
 import {useReplay} from "@/hooks/useReplay";
 import {IgnoredPathsManager} from "@/components/IgnoredPathsManager";
+import {useActivityInfoData} from "@/hooks/useActivityInfoData";
+import {useSettings} from "@/hooks/useSettings";
 
 export default function App() {
     // --- State Management ---
     const [logs, setLogs] = useState<LogEntry[]>([]);
-    const [databases, setDatabases] = useState<Database[]>([]);
+    const [apiToken, setApiToken] = useState<string | undefined>();
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [filterText, setFilterText] = useState("");
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [selectedDbs, setSelectedDbs] = useState<Database[]>([]);
     const [ignoredPaths, setIgnoredPaths] = useState<string[]>([]);
-    const [loading, setLoading] = useState(false);
     const [activeTabId, setActiveTabId] = useState<string>("logs");
     const [replayHistory, setReplayHistory] = useState<ReplayRun[]>([]);
-    
-    // Track in-flight requests to avoid redundant network calls
-    const fetchingTrees = useRef<Set<string>>(new Set());
 
-    const fetchFormSchema = async (formId: string) => {
-        if (!formId || fetchingTrees.current.has(formId)) return;
-        
-        const storage = await browser.storage.local.get("apiToken");
-        const token = storage.apiToken as string;
-        if (!token) return;
+    const { baseUrl, updateBaseUrl, grantPermission, hasPermission } = useSettings();
 
-        fetchingTrees.current.add(formId);
-        try {
-            const baseUrl = "https://3w.humanitarianaction.info";
-            const response = await fetch(`${baseUrl}/resources/form/${formId}/schema`, {
-                method: 'GET',
-                headers: {
-                    "X-ActivityInfo-Auth": token,
-                    "Accept": "application/json"
-                }
-            });
-
-            if (!response.ok) return;
-            const data = await response.json();
-
-            // Cache in storage
-            browser.storage.local.set({ [`schema_${formId}`]: data });
-
-            setDatabases(prev => prev.map(db => ({
-                ...db,
-                resources: db.resources?.map(res => 
-                    res.id === formId ? { ...res, schema: data } : res
-                )
-            })));
-        } catch (error) {
-            console.error("Error fetching form schema:", error);
-        } finally {
-            fetchingTrees.current.delete(formId);
-        }
-    };
-
-    // --- Data Loading ---
-    const fetchDatabaseTree = async (dbId: string) => {
-        if (!dbId || fetchingTrees.current.has(dbId)) return;
-        
-        fetchingTrees.current.add(dbId);
-        
-        const storage = await browser.storage.local.get("apiToken");
-        const token = storage.apiToken as string;
-        if (!token) {
-            fetchingTrees.current.delete(dbId);
-            return;
-        }
-
-        try {
-            const baseUrl = "https://3w.humanitarianaction.info";
-            const response = await fetch(`${baseUrl}/resources/databases/${dbId}`, {
-                method: 'GET',
-                headers: {
-                    "X-ActivityInfo-Auth": token,
-                    "Accept": "application/json"
-                }
-            });
-
-            if (!response.ok) {
-                fetchingTrees.current.delete(dbId);
-                return;
-            }
-            const data = await response.json();
-            const resources = data.resources || [];
-
-            // Cache in storage for instant availability next time
-            browser.storage.local.set({ [`tree_${dbId}`]: resources });
-
-            setDatabases(prev => prev.map(db => 
-                db.databaseId === dbId 
-                ? { ...db, resources } 
-                : db
-            ));
-
-            // Auto-fetch schemas for forms in this DB if they are mentioned in logs
-            const formIds = resources.filter((r: any) => r.type === 'FORM').map((r: any) => r.id);
-            formIds.forEach((fId: string) => {
-                const isMentioned = logs.some(l => l.url.includes(fId) || JSON.stringify(l.body).includes(fId));
-                if (isMentioned) fetchFormSchema(fId);
-            });
-        } catch (error) {
-            console.error("Error fetching database tree:", error);
-        } finally {
-            fetchingTrees.current.delete(dbId);
-        }
-    };
+    const {
+        databases,
+        loading,
+        fetchDatabaseTree,
+        fetchFormSchema
+    } = useActivityInfoData(apiToken, logs, baseUrl);
 
     const {
         isReplaying,
@@ -118,105 +49,31 @@ export default function App() {
         showResultsDialog,
         setShowResultsDialog,
         isConfiguring,
+        isReviewing,
         manualSourceId,
         setManualSourceId,
         handleReplayClick,
+        prepareMapping,
+        goToConfig,
+        updateMapping,
+        globalResourceMap,
         executeReplay
     } = useReplay(logs, databases, selectedIds, selectedDbs, replayHistory, setReplayHistory, fetchDatabaseTree);
-
-    // Auto-fetch trees for databases seen in logs
-    useEffect(() => {
-        if (logs.length > 0 && databases.length > 0) {
-            const seenDbIds = new Set<string>();
-            logs.forEach(log => {
-                const match = log.url.match(/databases\/([a-zA-Z0-9]+)/);
-                if (match && match[1]) seenDbIds.add(match[1]);
-            });
-
-            seenDbIds.forEach(id => {
-                const db = databases.find(d => d.databaseId === id);
-                if (db && !db.resources && !fetchingTrees.current.has(id)) {
-                    fetchDatabaseTree(id);
-                }
-            });
-        }
-    }, [logs, databases.length]); 
-
-    const loadDatabases = async (token: string) => {
-        setLoading(true);
-        try {
-            const baseUrl = "https://3w.humanitarianaction.info";
-            const response = await fetch(`${baseUrl}/resources/databases`, {
-                method: 'GET',
-                headers: {
-                    "X-ActivityInfo-Auth": token,
-                    "Accept": "application/json"
-                }
-            });
-
-            if (!response.ok) return;
-            const data = await response.json();
-
-            const newDbs = data.map((db: any) => ({
-                databaseId: String(db.databaseId || ""),
-                name: db.label || db.name || "Unknown"
-            }));
-            
-            // Critical fix: Merge with existing resources from state and storage
-            const cachedTrees = await browser.storage.local.get(null); 
-
-            setDatabases(prev => {
-                return newDbs.map((newDb: { databaseId: any; }) => {
-                    const existingInState = prev.find(p => p.databaseId === newDb.databaseId);
-                    const cachedResources = cachedTrees[`tree_${newDb.databaseId}`] as any[];
-                    
-                    const resources = existingInState?.resources || cachedResources || undefined;
-                    const resourcesWithSchemas = resources?.map(res => {
-                        if (res.type === 'FORM') {
-                            const cachedSchema = cachedTrees[`schema_${res.id}`];
-                            return { ...res, schema: res.schema || cachedSchema };
-                        }
-                        return res;
-                    });
-
-                    return { 
-                        ...newDb, 
-                        resources: resourcesWithSchemas
-                    };
-                });
-            });
-        } catch (error) {
-            console.error("Network error fetching databases:", error);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     useEffect(() => {
         browser.storage.local.get(["logs", "savedDbs", "apiToken", "replayHistory", "ignoredPaths"]).then(async (res) => {
             if (res.logs) setLogs(res.logs as LogEntry[]);
-            if (res.savedDbs) {
-                const dbs = res.savedDbs as Database[];
-                setSelectedDbs(dbs);
-                dbs.forEach(db => fetchDatabaseTree(db.databaseId));
-            }
+            if (res.savedDbs) setSelectedDbs(res.savedDbs as Database[]);
             if (res.replayHistory) setReplayHistory(res.replayHistory as ReplayRun[]);
             if (res.ignoredPaths) setIgnoredPaths(res.ignoredPaths as string[]);
-            if (res.apiToken) await loadDatabases(res.apiToken as string);
+            if (res.apiToken) setApiToken(res.apiToken as string);
         });
 
         const handleStorageChange = async (changes: any) => {
-            if (changes.apiToken?.newValue) await loadDatabases(changes.apiToken.newValue);
-            if (changes.logs) {
-                const newLogs = changes.logs.newValue || [];
-                setLogs(newLogs);
-            }
-            if (changes.replayHistory) {
-                setReplayHistory(changes.replayHistory.newValue || []);
-            }
-            if (changes.ignoredPaths) {
-                setIgnoredPaths(changes.ignoredPaths.newValue || []);
-            }
+            if (changes.apiToken?.newValue) setApiToken(changes.apiToken.newValue);
+            if (changes.logs) setLogs(changes.logs.newValue || []);
+            if (changes.replayHistory) setReplayHistory(changes.replayHistory.newValue || []);
+            if (changes.ignoredPaths) setIgnoredPaths(changes.ignoredPaths.newValue || []);
         };
 
         browser.storage.onChanged.addListener(handleStorageChange);
@@ -231,6 +88,16 @@ export default function App() {
         browser.storage.local.set({ ignoredPaths: next });
     };
 
+    const filteredLogs = logs.filter(log => {
+        if (!filterText) return true;
+        const search = filterText.toLowerCase();
+        return (
+            log.url.toLowerCase().includes(search) ||
+            log.method.toLowerCase().includes(search) ||
+            JSON.stringify(log.body).toLowerCase().includes(search)
+        );
+    });
+
     return (
         <div style={{ width: '450px', height: '600px', backgroundColor: '#f5f8fa', display: 'flex', flexDirection: 'column' }}>
             <Navbar>
@@ -241,6 +108,7 @@ export default function App() {
                     <Tabs id="MainTabs" selectedTabId={activeTabId} onChange={(id) => setActiveTabId(id as string)}>
                         <Tab id="logs" title="Logs" />
                         <Tab id="history" title="History" />
+                        <Tab id="settings" title="Settings" />
                     </Tabs>
                 </Navbar.Group>
                 <Navbar.Group align={Alignment.END}>
@@ -258,7 +126,6 @@ export default function App() {
                                 window.close();
                             });
                         }}
-
                         title="Open in new window"
                     />
                 </Navbar.Group>
@@ -266,17 +133,38 @@ export default function App() {
 
             {/* TAB CONTENT */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
-                {activeTabId === 'logs' ? (
+                {activeTabId === 'logs' && (
                     <>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                             <Checkbox
-                                checked={selectedIds.size === logs.length && logs.length > 0}
-                                indeterminate={selectedIds.size > 0 && selectedIds.size < logs.length}
-                                onChange={() => setSelectedIds(selectedIds.size === logs.length ? new Set() : new Set(logs.map(l => l.id)))}
-                                style={{ marginBottom: 0, marginRight: 10 }}
-                                label="Select all logs"
+                                checked={filteredLogs.length > 0 && filteredLogs.every(l => selectedIds.has(l.id))}
+                                indeterminate={filteredLogs.some(l => selectedIds.has(l.id)) && !filteredLogs.every(l => selectedIds.has(l.id))}
+                                onChange={() => {
+                                    const next = new Set(selectedIds);
+                                    const allVisibleSelected = filteredLogs.every(l => next.has(l.id));
+                                    if (allVisibleSelected) {
+                                        filteredLogs.forEach(l => next.delete(l.id));
+                                    } else {
+                                        filteredLogs.forEach(l => next.add(l.id));
+                                    }
+                                    setSelectedIds(next);
+                                }}
+                                style={{ marginBottom: 0 }}
+                                title={`Select visible (${filteredLogs.length})`}
                             />
-                            <div style={{ display: 'flex', gap: '5px' }}>
+                            
+                            <InputGroup
+                                leftIcon="search"
+                                placeholder="Filter logs..."
+                                value={filterText}
+                                onChange={(e) => setFilterText(e.target.value)}
+                                style={{ flex: 1 }}
+                                size="small"
+                                fill
+                                rightElement={filterText ? <Button icon="cross" minimal small onClick={() => setFilterText("")} /> : undefined}
+                            />
+
+                            <div style={{ display: 'flex', gap: '4px' }}>
                                 <IgnoredPathsManager 
                                     ignoredPaths={ignoredPaths} 
                                     onToggleIgnorePath={toggleIgnorePath} 
@@ -291,10 +179,35 @@ export default function App() {
                                 />
                             </div>
                         </div>
-                        {logs.length === 0 ? (
-                            <NonIdealState icon="info-sign" title="No requests intercepted" description="Perform actions in ActivityInfo to see requests here" />
+
+                        {!hasPermission && (
+                            <Callout intent={Intent.WARNING} icon="warning-sign" title="Permission Needed" style={{marginBottom: '10px'}}>
+                                Please grant access to <strong>{baseUrl}</strong> in the Settings tab to start recording logs.
+                            </Callout>
+                        )}
+                        {!apiToken && hasPermission ? (
+                            <NonIdealState 
+                                icon="user" 
+                                title="Not Logged In" 
+                                description={`We haven't intercepted your ActivityInfo session yet. Please log in to ${baseUrl} to start.`}
+                                action={
+                                    <Button 
+                                        intent="primary" 
+                                        text="Open ActivityInfo Login" 
+                                        onClick={() => {
+                                            browser.tabs.create({ url: `${baseUrl}/login` });
+                                        }} 
+                                    />
+                                }
+                            />
+                        ) : filteredLogs.length === 0 ? (
+                            <NonIdealState 
+                                icon={filterText ? "search" : "info-sign"} 
+                                title={filterText ? "No matches" : "No requests intercepted"} 
+                                description={filterText ? "Try a different search term" : "Perform actions in ActivityInfo to see requests here"} 
+                            />
                         ) : (
-                            logs.map((log) => (
+                            filteredLogs.map((log) => (
                                 <LogItem
                                     key={log.id}
                                     log={log}
@@ -306,12 +219,7 @@ export default function App() {
                                     onFetchSchema={fetchFormSchema}
                                     onToggleSelect={() => {
                                         const next = new Set(selectedIds);
-                                        if (next.has(log.id)) {
-                                            next.delete(log.id);
-                                        } else {
-                                            // Set preserves insertion order, so this naturally works
-                                            next.add(log.id);
-                                        }
+                                        next.has(log.id) ? next.delete(log.id) : next.add(log.id);
                                         setSelectedIds(next);
                                     }}
                                     onToggleExpand={() => {
@@ -337,8 +245,10 @@ export default function App() {
                             ))
                         )}
                     </>
-                ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', height: '100%' }}>
+                )}
+
+                {activeTabId === 'history' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '5px' }}>
                             <Button
                                 icon="trash"
@@ -350,9 +260,7 @@ export default function App() {
                             />
                         </div>
                         {replayHistory.length === 0 ? (
-                            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px', height: '100%' }}>
-                                <NonIdealState icon="history" title="No history yet" description="Your replayed runs will appear here."/>
-                            </div>
+                            <NonIdealState icon="history" title="No history yet" description="Your replayed runs will appear here."/>
                         ) : (
                             replayHistory.map((run) => (
                                 <HistoryItem
@@ -368,6 +276,42 @@ export default function App() {
                                 />
                             ))
                         )}
+                    </div>
+                )}
+
+                {activeTabId === 'settings' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '10px' }}>
+                        <FormGroup
+                            label="ActivityInfo Base URL"
+                            helperText="Example: https://activityinfo.org or your private instance URL"
+                        >
+                            <InputGroup
+                                value={baseUrl}
+                                onChange={(e) => updateBaseUrl(e.target.value)}
+                                placeholder="https://..."
+                            />
+                        </FormGroup>
+
+                        <Callout
+                            intent={hasPermission ? Intent.SUCCESS : Intent.WARNING}
+                            icon={hasPermission ? "tick" : "warning-sign"}
+                            title={hasPermission ? "Permission Granted" : "Permission Missing"}
+                        >
+                            <div style={{marginBottom: '10px'}}>
+                                Access to <strong>{baseUrl}</strong> is required to intercept requests and fetch database information.
+                            </div>
+                            {!hasPermission && (
+                                <Button
+                                    intent={Intent.PRIMARY}
+                                    text="Grant Permission"
+                                    onClick={grantPermission}
+                                />
+                            )}
+                        </Callout>
+
+                        <div style={{ fontSize: '12px', color: '#5c7080' }}>
+                            <p><strong>Note:</strong> Changing the Base URL will reload the extension background script to re-register network listeners.</p>
+                        </div>
                     </div>
                 )}
             </div>
@@ -389,7 +333,7 @@ export default function App() {
                         icon="repeat"
                         text={`Replay${selectedIds.size > 0 ? " (" + selectedIds.size + ")" : ""}`}
                         onClick={handleReplayClick}
-                        disabled={selectedIds.size === 0 || selectedDbs.length === 0}
+                        disabled={selectedIds.size === 0 || selectedDbs.length === 0 || loading || !hasPermission}
                         style={{whiteSpace: 'nowrap', paddingInline: '16px'}}
                     />
                 </div>
@@ -399,6 +343,7 @@ export default function App() {
                 isOpen={showResultsDialog}
                 onClose={() => setShowResultsDialog(false)}
                 isConfiguring={isConfiguring}
+                isReviewing={isReviewing}
                 isReplaying={isReplaying}
                 databases={databases}
                 selectedDbs={selectedDbs}
@@ -408,6 +353,10 @@ export default function App() {
                     setManualSourceId(id);
                     fetchDatabaseTree(id);
                 }}
+                onPrepareMapping={prepareMapping}
+                onBack={goToConfig}
+                globalResourceMap={globalResourceMap}
+                onUpdateMapping={updateMapping}
                 onStartReplay={executeReplay}
                 currentRun={currentRun}
             />

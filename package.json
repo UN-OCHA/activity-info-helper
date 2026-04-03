@@ -2,7 +2,7 @@
   "name": "activityinfo-helper",
   "description": "manifest.json description",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -12,7 +12,9 @@
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@blueprintjs/core": "^6.11.1",
@@ -31,11 +33,14 @@
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vitest/coverage-v8": "^4.1.2",
     "@wxt-dev/auto-icons": "^1.1.1",
     "@wxt-dev/module-react": "^1.1.5",
     "typescript": "^5.9.3",
+    "vitest": "^4.1.2",
     "wxt": "^0.20.20"
   },
   "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"

@@ -28,11 +28,12 @@ export const IgnoredPathsManager = ({ ignoredPaths, onToggleIgnorePath }: Ignore
             }
         >
             <Button
-                minimal
-                small
+                variant="minimal"
+                size="small"
                 icon="eye-off"
                 intent="warning"
                 text={`${ignoredPaths.length} Ignored`}
+                style={{whiteSpace: 'nowrap'}}
             />
         </Popover>
     );

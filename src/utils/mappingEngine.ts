@@ -1,17 +1,18 @@
 import {Database, Field, MappingInfo, Resource} from "@/types.ts";
 import {getGeneratedId} from "./idGenerator.ts";
 
-export const getResourceMap = (
-    text: string, 
-    databases: Database[], 
-    targetDbs: Database[], 
-    overrideScopingFormId?: string
-): Map<string, MappingInfo> => {
-    const resourceMap = new Map<string, MappingInfo>();
+export interface MappingMetadata {
+    dbIds: Set<string>;
+    resourceMetadata: Map<string, Resource & { dbId: string }>;
+}
 
-    // 1. Prepare Metadata Candidates
+/**
+ * Pre-computes mapping metadata from databases list to avoid redundant work during translation.
+ */
+export const getMappingMetadata = (databases: Database[]): MappingMetadata => {
     const dbIds = new Set(databases.map(db => db.databaseId));
     const resourceMetadata = new Map<string, Resource & { dbId: string }>();
+    
     databases.forEach(db => {
         db.resources?.forEach(res => {
             resourceMetadata.set(res.id, { ...res, dbId: db.databaseId });
@@ -28,6 +29,21 @@ export const getResourceMap = (
             }
         });
     });
+
+    return { dbIds, resourceMetadata };
+};
+
+export const getResourceMap = (
+    text: string, 
+    databases: Database[], 
+    targetDbs: Database[], 
+    overrideScopingFormId?: string,
+    metadata?: MappingMetadata
+): Map<string, MappingInfo> => {
+    const resourceMap = new Map<string, MappingInfo>();
+
+    // Use provided metadata or compute it (fallback)
+    const { dbIds, resourceMetadata } = metadata || getMappingMetadata(databases);
 
     // 2. Stage 1: Finding the referenced resource in the source ID
     
@@ -79,8 +95,6 @@ export const getResourceMap = (
                     });
                 }
             });
-        } else {
-            console.log("[MappingEngine] Scoping Form has NO schema in metadata");
         }
     }
 
@@ -131,9 +145,6 @@ export const getResourceMap = (
                 }
             }
 
-            // D) Potential or Fallback
-            // If Source DB is unknown but target is source, we should still try to be smart,
-            // but for now we follow the spec.
             return { 
                 targetDbId: tDbId, 
                 targetDbName: targetMetadata?.name || "Unknown",

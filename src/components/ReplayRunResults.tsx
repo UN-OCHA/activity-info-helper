@@ -1,4 +1,4 @@
-import {Icon, Spinner, Tag, Collapse} from "@blueprintjs/core";
+import {Collapse, Icon, Spinner, Tag} from "@blueprintjs/core";
 import {Database, ReplayResult, ReplayRun} from "@/types.ts";
 import {useState} from "react";
 import CodeMirror from '@uiw/react-codemirror';
@@ -26,6 +26,18 @@ export const ReplayRunResults = ({ run, databases }: ReplayRunResultsProps) => {
         return acc;
     }, {} as Record<string, { name: string, results: ReplayResult[] }>);
 
+    const formatJson = (val: any) => {
+        if (!val) return "";
+        if (typeof val === 'string') {
+            try {
+                return JSON.stringify(JSON.parse(val), null, 2);
+            } catch (e) {
+                return val;
+            }
+        }
+        return JSON.stringify(val, null, 2);
+    };
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
             {Object.entries(grouped).map(([dbId, group]) => (
@@ -35,7 +47,7 @@ export const ReplayRunResults = ({ run, databases }: ReplayRunResultsProps) => {
                         <span style={{ fontWeight: 600, fontSize: '13px' }}>{group.name}</span>
                         <Tag minimal round style={{ fontSize: '10px' }}>{dbId}</Tag>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '22px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {group.results.map((res, i) => {
                             const resultId = `${res.logId}-${res.dbId}`;
                             const isExpanded = expandedResults.has(resultId);
@@ -61,7 +73,7 @@ export const ReplayRunResults = ({ run, databases }: ReplayRunResultsProps) => {
                                                 <div style={{ marginBottom: '8px' }}>
                                                     <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#5c7080' }}>Request Body:</div>
                                                     <CodeMirror
-                                                        value={JSON.stringify(res.requestBody, null, 2)}
+                                                        value={formatJson(res.requestBody)}
                                                         editable={false}
                                                         extensions={[json(), ...highlighterExtensions]}
                                                         theme="light"
@@ -74,7 +86,7 @@ export const ReplayRunResults = ({ run, databases }: ReplayRunResultsProps) => {
                                                 <div>
                                                     <div style={{ fontWeight: 'bold', marginBottom: '4px', color: '#5c7080' }}>Response:</div>
                                                     <CodeMirror
-                                                        value={res.responseBody}
+                                                        value={formatJson(res.responseBody)}
                                                         editable={false}
                                                         extensions={[json(), ...highlighterExtensions]}
                                                         theme="light"

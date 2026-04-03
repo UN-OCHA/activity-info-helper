@@ -1,0 +1,19 @@
+name: Deploy
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+jobs:
+  setup:
+    uses: pnpm/action-setup/@v4
+    with:
+      version: "latest"
+  submit:
+    uses: ryohidaka/action-wxt-submit@v1.2.0
+    with:
+      root-path: '.'
+      firefox: true
+      firefox-extension-id: ${{ secrets.FIREFOX_EXTENSION_ID }}
+      firefox-jwt-issuer: $${{ secrets.FIREFOX_JWT_ISSUER }}
+      firefox-jwt-secret: ${{ secrets.FIREFOX_JWT_SECRET }}

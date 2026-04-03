@@ -13,6 +13,14 @@ export default defineConfig({
     optional_host_permissions: [
       "https://*/*",
       "http://*/*"
-    ]
+    ],
+    browser_specific_settings: {
+      gecko: {
+        // @ts-ignore
+        data_collection_permissions: {
+          required: ['none']
+        }
+      }
+    }
   },
 });

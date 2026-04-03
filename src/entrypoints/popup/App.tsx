@@ -99,7 +99,16 @@ export default function App() {
     });
 
     return (
-        <div style={{ width: '450px', height: '600px', backgroundColor: '#f5f8fa', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ minWidth: '450px', height: '100vh', minHeight: '600px', backgroundColor: '#f5f8fa', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <style>{`
+                html, body, #root {
+                    height: 100% !important;
+                    min-height: 600px !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                    overflow: hidden !important;
+                }
+            `}</style>
             <Navbar>
                 <Navbar.Group align={Alignment.START}>
                     <img src="icon.png" style={{width: '24px', height: '24px', borderRadius: '8px'}} alt="logo" />
@@ -131,55 +140,72 @@ export default function App() {
                 </Navbar.Group>
             </Navbar>
 
-            {/* TAB CONTENT */}
+            {/* STICKY HEADER FOR LOGS (Filters) */}
+            {activeTabId === 'logs' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '15px 15px 0 15px' }}>
+                    <Checkbox
+                        checked={filteredLogs.length > 0 && filteredLogs.every(l => selectedIds.has(l.id))}
+                        indeterminate={filteredLogs.some(l => selectedIds.has(l.id)) && !filteredLogs.every(l => selectedIds.has(l.id))}
+                        onChange={() => {
+                            const next = new Set(selectedIds);
+                            const allVisibleSelected = filteredLogs.every(l => next.has(l.id));
+                            if (allVisibleSelected) {
+                                filteredLogs.forEach(l => next.delete(l.id));
+                            } else {
+                                filteredLogs.forEach(l => next.add(l.id));
+                            }
+                            setSelectedIds(next);
+                        }}
+                        style={{ marginBottom: 0 }}
+                        title={`Select visible (${filteredLogs.length})`}
+                    />
+                    
+                    <InputGroup
+                        leftIcon="search"
+                        placeholder="Filter logs..."
+                        value={filterText}
+                        onChange={(e) => setFilterText(e.target.value)}
+                        style={{ flex: 1 }}
+                        size="small"
+                        fill
+                        rightElement={filterText ? <Button icon="cross" variant="minimal" size="small" onClick={() => setFilterText("")} /> : undefined}
+                    />
+
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                        <IgnoredPathsManager 
+                            ignoredPaths={ignoredPaths} 
+                            onToggleIgnorePath={toggleIgnorePath} 
+                        />
+                        <Button
+                            icon="trash"
+                            variant="minimal"
+                            intent="danger"
+                            size="small"
+                            onClick={() => browser.storage.local.set({ logs: [] })}
+                            title="Clear Logs"
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* STICKY HEADER FOR HISTORY */}
+            {activeTabId === 'history' && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '15px 15px 0 15px' }}>
+                    <Button
+                        icon="trash"
+                        variant="minimal"
+                        intent="danger"
+                        size="small"
+                        text="Clear History"
+                        onClick={() => browser.storage.local.set({ replayHistory: [] })}
+                    />
+                </div>
+            )}
+
+            {/* TAB CONTENT (SCROLLABLE) */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
                 {activeTabId === 'logs' && (
                     <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                            <Checkbox
-                                checked={filteredLogs.length > 0 && filteredLogs.every(l => selectedIds.has(l.id))}
-                                indeterminate={filteredLogs.some(l => selectedIds.has(l.id)) && !filteredLogs.every(l => selectedIds.has(l.id))}
-                                onChange={() => {
-                                    const next = new Set(selectedIds);
-                                    const allVisibleSelected = filteredLogs.every(l => next.has(l.id));
-                                    if (allVisibleSelected) {
-                                        filteredLogs.forEach(l => next.delete(l.id));
-                                    } else {
-                                        filteredLogs.forEach(l => next.add(l.id));
-                                    }
-                                    setSelectedIds(next);
-                                }}
-                                style={{ marginBottom: 0 }}
-                                title={`Select visible (${filteredLogs.length})`}
-                            />
-                            
-                            <InputGroup
-                                leftIcon="search"
-                                placeholder="Filter logs..."
-                                value={filterText}
-                                onChange={(e) => setFilterText(e.target.value)}
-                                style={{ flex: 1 }}
-                                size="small"
-                                fill
-                                rightElement={filterText ? <Button icon="cross" minimal small onClick={() => setFilterText("")} /> : undefined}
-                            />
-
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                                <IgnoredPathsManager 
-                                    ignoredPaths={ignoredPaths} 
-                                    onToggleIgnorePath={toggleIgnorePath} 
-                                />
-                                <Button
-                                    icon="trash"
-                                    variant="minimal"
-                                    intent="danger"
-                                    small
-                                    onClick={() => browser.storage.local.set({ logs: [] })}
-                                    title="Clear Logs"
-                                />
-                            </div>
-                        </div>
-
                         {!hasPermission && (
                             <Callout intent={Intent.WARNING} icon="warning-sign" title="Permission Needed" style={{marginBottom: '10px'}}>
                                 Please grant access to <strong>{baseUrl}</strong> in the Settings tab to start recording logs.
@@ -249,16 +275,6 @@ export default function App() {
 
                 {activeTabId === 'history' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '5px' }}>
-                            <Button
-                                icon="trash"
-                                variant="minimal"
-                                intent="danger"
-                                small
-                                text="Clear History"
-                                onClick={() => browser.storage.local.set({ replayHistory: [] })}
-                            />
-                        </div>
                         {replayHistory.length === 0 ? (
                             <NonIdealState icon="history" title="No history yet" description="Your replayed runs will appear here."/>
                         ) : (

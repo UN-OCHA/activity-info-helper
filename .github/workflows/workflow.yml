@@ -15,5 +15,5 @@ jobs:
       root-path: '.'
       firefox: true
       firefox-extension-id: ${{ secrets.FIREFOX_EXTENSION_ID }}
-      firefox-jwt-issuer: $${{ secrets.FIREFOX_JWT_ISSUER }}
+      firefox-jwt-issuer: ${{ secrets.FIREFOX_JWT_ISSUER }}
       firefox-jwt-secret: ${{ secrets.FIREFOX_JWT_SECRET }}
